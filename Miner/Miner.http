@@ -10,9 +10,6 @@ Accept: application/json
 GET {{Miner1_HostAddress}}/node/status
 Accept: application/json
 
-### 2.1. Get account state (balance and wallet Nonce)
-GET {{Miner1_HostAddress}}/accounts/0x88803994660f50ae8aaca25df7631416ad0b3fd7
-Accept: application/json
 
 ### 3. List of trusted nodes (peers)
 GET {{Miner1_HostAddress}}/node/peers
@@ -53,10 +50,35 @@ Content-Type: application/json
   "nonce": 0
 }
 
+### 10.1. Get transaction by ID
+GET {{Miner1_HostAddress}}/transactions/some-tx-id
+Accept: application/json
+
+
 ### 11. Trigger mining
 POST {{Miner1_HostAddress}}/mine
 Accept: application/json
 
-### 12. Trigger consensus resolution
+### 12. Receive candidate block from peer
+POST {{Miner1_HostAddress}}/blocks
+Content-Type: application/json
+X-Node-Host: 127.0.0.1
+X-Node-Port: 8082
+
+{
+  "header": {
+    "index": 1,
+    "previousHash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+    "merkleRoot": "0000000000000000000000000000000000000000000000000000000000000000",
+    "timestamp": "2026-10-15T12:00:00Z",
+    "nonce": 12345,
+    "difficulty": 4,
+    "hash": "candidate_block_hash"
+  },
+  "transactions": []
+}
+
+### 13. Trigger consensus resolution
 POST {{Miner1_HostAddress}}/consensus/resolve
 Accept: application/json
+

@@ -17,6 +17,7 @@ public class Transaction
     
     public DateTime Timestamp { get; set; }
     public string? Signature { get; set; }
+    public string? PublicKey { get; set; }
 
     public Transaction()
     {
@@ -32,7 +33,7 @@ public class Transaction
         Id = CalculateHash();
     }
 
-    public Transaction(string id, string sender, string recipient, decimal amount, long nonce, DateTime timestamp, string? signature = null)
+    public Transaction(string id, string sender, string recipient, decimal amount, long nonce, DateTime timestamp, string? signature = null, string? publicKey = null)
     {
         Id = id;
         Sender = sender;
@@ -41,6 +42,7 @@ public class Transaction
         Nonce = nonce;
         Timestamp = timestamp;
         Signature = signature;
+        PublicKey = publicKey;
     }
 
     /// <summary>
@@ -53,15 +55,25 @@ public class Transaction
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
-    public void Sign(string privateKey)
+    /// <summary>
+    /// Verifies that the signature matches the public key and that the public key matches the sender address.
+    /// </summary>
+    public bool VerifySignature(string? explicitPublicKey = null)
     {
-        // Stub for manual implementation in miner when needed
-        throw new NotImplementedException();
-    }
+        var pubKey = explicitPublicKey ?? PublicKey;
+        if (string.IsNullOrWhiteSpace(pubKey) || string.IsNullOrWhiteSpace(Signature))
+        {
+            return false;
+        }
 
-    public bool VerifySignature(string publicKey)
-    {
-        // Stub for signature verification
-        throw new NotImplementedException();
+        // 1. Verify that the public key matches the sender address
+        var derivedAddress = Common.CryptoHelper.DeriveAddress(pubKey);
+        if (!string.Equals(derivedAddress, Sender, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // 2. Verify signature over Id
+        return Common.CryptoHelper.VerifySignature(pubKey, Id, Signature);
     }
 }

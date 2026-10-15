@@ -1,13 +1,13 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace WalletApp.Services;
+namespace Blockchain.Shared.Common;
 
 /// <summary>
-/// Cryptographic service providing ECDSA key generation,
-/// address derivation, and digital transaction signing.
+/// Common cryptographic utilities for ECDSA (P-256) key generation, signing,
+/// signature verification, and Ethereum-style address derivation.
 /// </summary>
-public static class CryptoService
+public static class CryptoHelper
 {
     /// <summary>
     /// Generates a new ECDSA (P-256) keypair and derives the wallet address (0x...).
@@ -27,17 +27,7 @@ public static class CryptoService
     }
 
     /// <summary>
-    /// Derives an Ethereum-style wallet address: "0x" + first 20 bytes of the SHA-256 hash of the public key (40 hex characters).
-    /// </summary>
-    public static string DeriveAddress(byte[] publicKeyBytes)
-    {
-        var hash = SHA256.HashData(publicKeyBytes);
-        var addressBytes = hash.Take(20).ToArray();
-        return "0x" + Convert.ToHexString(addressBytes).ToLowerInvariant();
-    }
-
-    /// <summary>
-    /// Signs a data payload (transaction hash) using an ECDSA private key.
+    /// Signs a data payload (such as transaction hash) using an ECDSA private key.
     /// </summary>
     public static string SignData(string privateKeyHex, string data)
     {
@@ -51,12 +41,39 @@ public static class CryptoService
     }
 
     /// <summary>
-    /// Verifies an ECDSA digital signature using the signer's public key.
+    /// Derives an Ethereum-style address from public key bytes:
+    /// "0x" + first 20 bytes of SHA-256 hash of the public key.
+    /// </summary>
+    public static string DeriveAddress(byte[] publicKeyBytes)
+    {
+        var hash = SHA256.HashData(publicKeyBytes);
+        var addressBytes = hash.Take(20).ToArray();
+        return "0x" + Convert.ToHexString(addressBytes).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Derives an Ethereum-style address from a hex-encoded public key.
+    /// </summary>
+    public static string DeriveAddress(string publicKeyHex)
+    {
+        var publicKeyBytes = Convert.FromHexString(publicKeyHex);
+        return DeriveAddress(publicKeyBytes);
+    }
+
+    /// <summary>
+    /// Verifies an ECDSA digital signature over data using a hex-encoded public key.
     /// </summary>
     public static bool VerifySignature(string publicKeyHex, string data, string signatureHex)
     {
         try
         {
+            if (string.IsNullOrWhiteSpace(publicKeyHex) ||
+                string.IsNullOrWhiteSpace(data) ||
+                string.IsNullOrWhiteSpace(signatureHex))
+            {
+                return false;
+            }
+
             using var ecdsa = ECDsa.Create();
             ecdsa.ImportSubjectPublicKeyInfo(Convert.FromHexString(publicKeyHex), out _);
 

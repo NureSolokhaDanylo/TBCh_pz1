@@ -1,86 +1,93 @@
+using System.Text;
 using Blockchain.Shared.Common;
-using Blockchain.Shared.Dtos;
 using Blockchain.Shared.Models;
+using Blockchain.Shared.Services;
 using Miner.Common;
+using Miner.Endpoints;
+using Miner.Logging;
 using Miner.Services;
+using Miner.UI;
+using Miner.Wallet;
+
+Console.OutputEncoding = Encoding.UTF8;
+Console.InputEncoding = Encoding.UTF8;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Determine execution mode (interactive terminal vs headless container)
+bool isInteractive = Environment.UserInteractive &&
+                     !Console.IsInputRedirected &&
+                     string.IsNullOrEmpty(Environment.GetEnvironmentVariable("HEADLESS"));
+
+// Logging configuration
+var logBuffer = new InMemoryLogBuffer(500);
+builder.Services.AddSingleton(logBuffer);
+
+if (isInteractive)
+{
+    // In interactive mode, clear default console logger so Spectre.Console prompts remain clean
+    builder.Logging.ClearProviders();
+    builder.Logging.AddProvider(new BufferedLoggerProvider(logBuffer, "data/miner.log"));
+}
+else
+{
+    // In headless mode (e.g. Docker container), log to standard console and buffer
+    builder.Logging.AddProvider(new BufferedLoggerProvider(logBuffer, "data/miner.log"));
+}
+
+// Register configuration and options
+builder.Services.AddSingleton<MiningOptions>();
+
+// Register in-memory transaction pool (Mempool)
+builder.Services.AddSingleton<Mempool>();
+
+// Register validator and orchestration services
+builder.Services.AddSingleton<AccountLedger>();
+builder.Services.AddSingleton<IBlockchainValidator, StructuralBlockchainValidator>();
+builder.Services.AddSingleton<MiningController>();
+builder.Services.AddSingleton<ChainSynchronizationService>();
+
+// Register wallet and UI services
+builder.Services.AddSingleton<WalletService>();
+builder.Services.AddSingleton<ConsoleUiService>();
 
 builder.Services.AddHttpClient("PeerClient", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
 });
-builder.Services.AddHostedService<PeerDiscoveryService>();
+
+// Register mining background service
+builder.Services.AddHostedService<MiningBackgroundService>();
 
 var app = builder.Build();
 
-// ========================================================
-// 1. Node Status, Accounts & Peers
-// ========================================================
-
-// Health check endpoint
-app.MapGet("/", () => Results.StatusCode(StatusCodes.Status501NotImplemented));
-
-// Current node status (chain height, mempool size, difficulty)
-app.MapGet("/node/status", () => Results.StatusCode(StatusCodes.Status501NotImplemented));
-
-// Account state (balance and wallet nonce)
-app.MapGet("/accounts/{address}", (string address) => Results.StatusCode(StatusCodes.Status501NotImplemented));
-
-// List of trusted nodes (from data/nodes.json)
-app.MapGet("/node/peers", async () =>
+// Ensure single blockchain file (data/blocks.json) contains hardcoded Genesis block if empty
+var blocksPath = "data/blocks.json";
+if (!File.Exists(blocksPath) || new FileInfo(blocksPath).Length == 0)
 {
-    var trustedPeers = await NodeManager.GetTrustedNodesAsync();
-    return Results.Ok(trustedPeers);
-});
+    await JsonLinesHelper.AppendAsync(blocksPath, GenesisBlock.Instance);
+}
 
-// ========================================================
-// 2. Blocks
-// ========================================================
+// Map modular P2P endpoint groups
+app.MapNodeEndpoints();
+app.MapBlockEndpoints();
+app.MapTransactionEndpoints();
+app.MapConsensusEndpoints();
 
-// Get the full blockchain (from data/blocks.json)
-app.MapGet("/blocks", () => Results.StatusCode(StatusCodes.Status501NotImplemented));
+if (isInteractive)
+{
+    // Start background ASP.NET Core server
+    await app.StartAsync();
 
-// Get the latest block in the chain
-app.MapGet("/blocks/latest", () => Results.StatusCode(StatusCodes.Status501NotImplemented));
+    // Run interactive Spectre.Console UI loop
+    var uiService = app.Services.GetRequiredService<ConsoleUiService>();
+    await uiService.RunAsync();
 
-// Get block by index
-app.MapGet("/blocks/{index:int}", (int index) => Results.StatusCode(StatusCodes.Status501NotImplemented));
-
-// Receive a new block from network peers
-app.MapPost("/blocks", (Block block) => Results.StatusCode(StatusCodes.Status501NotImplemented));
-
-// ========================================================
-// 3. Block Headers
-// ========================================================
-
-// Get all block headers (from data/headers.json) for SPV / fast sync
-app.MapGet("/headers", () => Results.StatusCode(StatusCodes.Status501NotImplemented));
-
-// Get the latest block header
-app.MapGet("/headers/latest", () => Results.StatusCode(StatusCodes.Status501NotImplemented));
-
-// ========================================================
-// 4. Transactions & Mempool
-// ========================================================
-
-// Get pending unconfirmed transactions (mempool)
-app.MapGet("/transactions/pending", () => Results.StatusCode(StatusCodes.Status501NotImplemented));
-
-// Submit a new transaction to the mempool
-app.MapPost("/transactions", (Transaction transaction) => Results.StatusCode(StatusCodes.Status501NotImplemented));
-
-// Get transaction by ID
-app.MapGet("/transactions/{id}", (string id) => Results.StatusCode(StatusCodes.Status501NotImplemented));
-
-// ========================================================
-// 5. Mining & Consensus
-// ========================================================
-
-// Trigger mining of a new block with pending transactions
-app.MapPost("/mine", () => Results.StatusCode(StatusCodes.Status501NotImplemented));
-
-// Trigger chain synchronization and conflict resolution (Longest Chain Rule)
-app.MapPost("/consensus/resolve", () => Results.StatusCode(StatusCodes.Status501NotImplemented));
-
-app.Run();
+    // Graceful shutdown on user exit
+    await app.StopAsync();
+}
+else
+{
+    // Headless daemon mode for Docker containers
+    await app.RunAsync();
+}

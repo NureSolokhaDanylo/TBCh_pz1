@@ -34,8 +34,7 @@ public static class NodeManager
     }
 
     /// <summary>
-    /// Retrieves only verified and trusted nodes (IsTrusted == true and not banned),
-    /// ordered by highest reputation, success rate, and lowest latency.
+    /// Retrieves only verified and trusted nodes (IsTrusted == true and not banned).
     /// </summary>
     public static async Task<List<TrustedNode>> GetTrustedNodesAsync(
         string? nodesFilePath = null,
@@ -53,48 +52,7 @@ public static class NodeManager
 
             return nodes
                 .Where(n => n.IsTrusted && !banned.Any(b => IsMatch(b.Host, b.Port, n.Host, n.Port)))
-                .OrderByDescending(n => n.Reputation)
-                .ThenByDescending(n => n.SuccessRate)
-                .ThenBy(n => n.LatencyMs ?? long.MaxValue)
                 .ToList();
-        }
-        finally
-        {
-            Lock.Release();
-        }
-    }
-
-    /// <summary>
-    /// Updates availability and latency metrics for a node following a poll attempt.
-    /// </summary>
-    public static async Task UpdateNodeMetricsAsync(
-        string host,
-        int port,
-        bool success,
-        long latencyMs = 0,
-        string? nodesFilePath = null,
-        CancellationToken cancellationToken = default)
-    {
-        var path = nodesFilePath ?? DefaultNodesFilePath;
-
-        await Lock.WaitAsync(cancellationToken);
-        try
-        {
-            var nodes = await JsonLinesHelper.ReadAllAsync<TrustedNode>(path, cancellationToken: cancellationToken);
-            var node = nodes.FirstOrDefault(n => IsMatch(n.Host, n.Port, host, port));
-            if (node is not null)
-            {
-                if (success)
-                {
-                    node.RecordSuccess(latencyMs);
-                }
-                else
-                {
-                    node.RecordFailure();
-                }
-
-                await JsonLinesHelper.OverwriteAllAsync(path, nodes, cancellationToken: cancellationToken);
-            }
         }
         finally
         {

@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace Blockchain.Shared.Models;
 
 public class BlockHeader
@@ -39,13 +42,38 @@ public class BlockHeader
         Hash = hash;
     }
 
+    /// <summary>
+    /// Computes the SHA-256 hash of the block header.
+    /// Canonical data: Index + PreviousHash + MerkleRoot + Timestamp + Difficulty + Nonce.
+    /// </summary>
     public string CalculateHash()
     {
-        throw new NotImplementedException();
+        var rawData = $"{Index}:{PreviousHash}:{MerkleRoot}:{Timestamp:O}:{Difficulty}:{Nonce}";
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawData));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
-    public void Mine(int difficulty)
+    /// <summary>
+    /// Performs Proof-of-Work by iteratively incrementing Nonce until the computed hash
+    /// starts with the required number of leading zeroes specified by difficulty.
+    /// </summary>
+    public bool Mine(int difficulty, CancellationToken cancellationToken = default)
     {
-        throw new NotImplementedException();
+        Difficulty = difficulty;
+        var targetPrefix = new string('0', difficulty);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var hash = CalculateHash();
+            if (hash.StartsWith(targetPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                Hash = hash;
+                return true;
+            }
+
+            Nonce++;
+        }
+
+        return false;
     }
 }
