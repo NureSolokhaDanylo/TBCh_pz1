@@ -1,3 +1,5 @@
 <Solution>
+  <Project Path="Blockchain.Shared/Blockchain.Shared.csproj" />
   <Project Path="Miner/Miner.csproj" />
+  <Project Path="WalletApp/WalletApp.csproj" />
 </Solution>

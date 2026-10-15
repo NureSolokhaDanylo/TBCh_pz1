@@ -1,6 +1,62 @@
-@Miner_HostAddress = http://localhost:5006
+@Miner1_HostAddress = http://localhost:8081
+@Miner2_HostAddress = http://localhost:8082
+@Miner3_HostAddress = http://localhost:8083
 
-GET {{Miner_HostAddress}}/weatherforecast/
+### 1. Health check for Miner 1
+GET {{Miner1_HostAddress}}/
 Accept: application/json
 
-###
+### 2. Node status
+GET {{Miner1_HostAddress}}/node/status
+Accept: application/json
+
+### 2.1. Get account state (balance and wallet Nonce)
+GET {{Miner1_HostAddress}}/accounts/0x88803994660f50ae8aaca25df7631416ad0b3fd7
+Accept: application/json
+
+### 3. List of trusted nodes (peers)
+GET {{Miner1_HostAddress}}/node/peers
+Accept: application/json
+
+### 4. Get full blockchain
+GET {{Miner1_HostAddress}}/blocks
+Accept: application/json
+
+### 5. Get latest block
+GET {{Miner1_HostAddress}}/blocks/latest
+Accept: application/json
+
+### 6. Get block by index 0
+GET {{Miner1_HostAddress}}/blocks/0
+Accept: application/json
+
+### 7. Get block headers
+GET {{Miner1_HostAddress}}/headers
+Accept: application/json
+
+### 8. Get latest block header
+GET {{Miner1_HostAddress}}/headers/latest
+Accept: application/json
+
+### 9. Get pending transactions (mempool)
+GET {{Miner1_HostAddress}}/transactions/pending
+Accept: application/json
+
+### 10. Submit new transaction
+POST {{Miner1_HostAddress}}/transactions
+Content-Type: application/json
+
+{
+  "sender": "Alice",
+  "recipient": "Bob",
+  "amount": 50.0,
+  "nonce": 0
+}
+
+### 11. Trigger mining
+POST {{Miner1_HostAddress}}/mine
+Accept: application/json
+
+### 12. Trigger consensus resolution
+POST {{Miner1_HostAddress}}/consensus/resolve
+Accept: application/json
