@@ -1,11 +1,12 @@
 using Blockchain.Shared.Common;
 using Blockchain.Shared.Models;
+using Miner.Common;
 using Miner.Services;
 
 namespace Miner.Wallet;
 
 /// <summary>
-/// Full-Node Wallet service: manages local ECDSA keypairs in JSON Lines format,
+/// Full-Node Wallet service: manages local ECDSA (secp256k1) keypairs in JSON Lines format,
 /// verifies account balances and nonces directly from the in-memory AccountLedger,
 /// signs transactions, inserts them into the local Mempool, and broadcasts them to network peers.
 /// </summary>
@@ -49,7 +50,7 @@ public class WalletService
     }
 
     /// <summary>
-    /// Creates a new wallet with an ECDSA (P-256) keypair and saves it to data/wallets.json.
+    /// Creates a new wallet with an ECDSA (secp256k1) keypair and saves it to data/wallets.json.
     /// </summary>
     public async Task<Wallet> CreateWalletAsync(string label, CancellationToken cancellationToken = default)
     {
@@ -63,17 +64,46 @@ public class WalletService
         };
 
         await JsonLinesHelper.AppendAsync(WalletsFilePath, wallet, cancellationToken: cancellationToken);
-        _logger.LogInformation("New wallet '{Label}' created with address {Address}.", label, address);
+        _logger.LogInformation("New secp256k1 wallet '{Label}' created with address {Address}.", label, address);
         return wallet;
     }
 
     /// <summary>
-    /// Creates, signs, validates, and broadcasts a transaction.
+    /// Ensures an active mining wallet exists. If no wallets are present or no address is configured,
+    /// automatically generates a default miner wallet, saves it to wallets.json, and assigns it to MiningOptions.
+    /// </summary>
+    public async Task<string> EnsureMiningWalletAsync(MiningOptions options, CancellationToken cancellationToken = default)
+    {
+        var wallets = await GetWalletsAsync(cancellationToken);
+        if (wallets.Count == 0)
+        {
+            var defaultWallet = await CreateWalletAsync("Miner Wallet", cancellationToken);
+            options.MinerAddress = defaultWallet.Address;
+            _logger.LogInformation("No existing wallets found. Automatically created default miner wallet {Address}.", defaultWallet.Address);
+            return defaultWallet.Address;
+        }
+
+        // If options address is null, empty, or default dummy placeholder, assign the first available wallet
+        if (string.IsNullOrWhiteSpace(options.MinerAddress) ||
+            options.MinerAddress.Equals("0x0000000000000000000000000000000000000001", StringComparison.OrdinalIgnoreCase))
+        {
+            var preferred = wallets.FirstOrDefault(w => w.Label.Contains("Miner", StringComparison.OrdinalIgnoreCase)) ?? wallets[0];
+            options.MinerAddress = preferred.Address;
+            _logger.LogInformation("Assigned active miner wallet to {Address} ({Label}).", preferred.Address, preferred.Label);
+            return preferred.Address;
+        }
+
+        return options.MinerAddress;
+    }
+
+    /// <summary>
+    /// Creates, signs, validates, and broadcasts a transaction (including optional miner Fee).
     /// </summary>
     public async Task<(bool Success, Transaction? Transaction, string Message)> CreateAndSendTransactionAsync(
         Wallet senderWallet,
         string recipientAddress,
         decimal amount,
+        decimal fee = 0m,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(recipientAddress))
@@ -86,6 +116,11 @@ public class WalletService
             return (false, null, "Transfer amount must be strictly greater than zero.");
         }
 
+        if (fee < 0)
+        {
+            return (false, null, "Transaction fee cannot be negative.");
+        }
+
         if (string.Equals(senderWallet.Address.Trim(), recipientAddress.Trim(), StringComparison.OrdinalIgnoreCase))
         {
             return (false, null, "Sender and recipient addresses cannot be identical.");
@@ -96,21 +131,18 @@ public class WalletService
         var pendingCount = _mempool.GetAll().Count(t => string.Equals(t.Sender, senderWallet.Address, StringComparison.OrdinalIgnoreCase));
         var nextNonce = confirmedNonce + pendingCount;
 
-        // 1. Create transaction
-        var tx = new Transaction(senderWallet.Address.Trim(), recipientAddress.Trim(), amount, nextNonce)
-        {
-            PublicKey = senderWallet.PublicKey
-        };
+        // 1. Create transaction with Fee
+        var tx = new Transaction(senderWallet.Address.Trim(), recipientAddress.Trim(), amount, nextNonce, fee);
 
         // 2. Sign transaction hash with sender's private key
-        tx.Signature = CryptoHelper.SignData(senderWallet.PrivateKey, tx.Id);
+        tx.Sign(senderWallet.PrivateKey, senderWallet.PublicKey);
 
-        // 3. Validate and add to local Mempool
+        // 3. Validate and add to local Mempool (4 mandatory checks)
         var (added, error) = _mempool.Add(tx, _accountLedger);
         if (!added)
         {
             _logger.LogWarning("Transaction creation failed validation: {Error}", error);
-            return (false, null, $"Transaction rejected by local ledger: {error}");
+            return (false, null, error ?? "Transaction rejected by mempool validation.");
         }
 
         // 4. Save to outbox history

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -9,7 +10,7 @@ public class BlockHeader
     public string PreviousHash { get; set; } = string.Empty;
     public string MerkleRoot { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; }
-    
+
     /// <summary>
     /// Value for Proof-of-Work mining (Mining Nonce).
     /// </summary>
@@ -36,20 +37,30 @@ public class BlockHeader
         Index = index;
         PreviousHash = previousHash;
         MerkleRoot = merkleRoot;
-        Timestamp = timestamp;
+        Timestamp = timestamp.ToUniversalTime();
         Nonce = nonce;
         Difficulty = difficulty;
         Hash = hash;
     }
 
     /// <summary>
-    /// Computes the SHA-256 hash of the block header.
-    /// Canonical data: Index + PreviousHash + MerkleRoot + Timestamp + Difficulty + Nonce.
+    /// Deterministically serializes the block header fields into an identical byte sequence across all nodes.
+    /// Includes Index, PreviousHash, MerkleRoot, UTC Timestamp, Difficulty, and Nonce.
+    /// </summary>
+    public byte[] ToBytes()
+    {
+        var canonical = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{Index}:{(PreviousHash ?? string.Empty).Trim().ToLowerInvariant()}:{(MerkleRoot ?? string.Empty).Trim().ToLowerInvariant()}:{Timestamp.ToUniversalTime():O}:{Difficulty}:{Nonce}");
+        return Encoding.UTF8.GetBytes(canonical);
+    }
+
+    /// <summary>
+    /// Computes the SHA-256 hash of the deterministic byte representation of the block header.
     /// </summary>
     public string CalculateHash()
     {
-        var rawData = $"{Index}:{PreviousHash}:{MerkleRoot}:{Timestamp:O}:{Difficulty}:{Nonce}";
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawData));
+        var bytes = SHA256.HashData(ToBytes());
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 

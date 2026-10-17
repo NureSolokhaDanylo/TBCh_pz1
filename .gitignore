@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Blockchain persistence and sensitive agent rules
+data/
+AGENTS.md

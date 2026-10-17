@@ -17,4 +17,10 @@ public interface IBlockchainValidator
     /// Validates an individual candidate block against the current chain tip.
     /// </summary>
     (bool IsValid, string? ErrorMessage) ValidateBlock(Block block, Block previousTip);
+
+    /// <summary>
+    /// Validates an entire blockchain and identifies the index of the first invalid block.
+    /// Returns FirstInvalidBlockIndex = -1 if the entire chain is valid.
+    /// </summary>
+    (bool IsValid, int FirstInvalidBlockIndex, string? ErrorMessage) ValidateChainDetailed(IReadOnlyList<Block> chain);
 }
