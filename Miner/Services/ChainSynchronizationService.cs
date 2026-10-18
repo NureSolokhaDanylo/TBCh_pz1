@@ -468,18 +468,25 @@ public class ChainSynchronizationService
             return;
         }
 
+        bool needFullNetworkSync = false;
+
         await _syncLock.WaitAsync(cancellationToken);
         try
         {
-            await ProcessIncomingBlockCoreAsync(block, senderHost, senderPort, cancellationToken);
+            needFullNetworkSync = await ProcessIncomingBlockCoreAsync(block, senderHost, senderPort, cancellationToken);
         }
         finally
         {
             _syncLock.Release();
         }
+
+        if (needFullNetworkSync)
+        {
+            await InitialSyncAsync(cancellationToken);
+        }
     }
 
-    private async Task ProcessIncomingBlockCoreAsync(Block block, string? senderHost, int? senderPort, CancellationToken cancellationToken)
+    private async Task<bool> ProcessIncomingBlockCoreAsync(Block block, string? senderHost, int? senderPort, CancellationToken cancellationToken)
     {
         var localChain = await GetLocalChainAsync(cancellationToken);
         var tip = localChain[^1];
@@ -488,7 +495,7 @@ public class ChainSynchronizationService
         {
             _logger.LogInformation("Ignored stale block #{Index} from {Host}:{Port}. Current tip is #{TipIndex}.",
                 block.Header.Index, senderHost, senderPort, tip.Header.Index);
-            return;
+            return false;
         }
 
         if (block.Header.Index == tip.Header.Index + 1 &&
@@ -521,7 +528,7 @@ public class ChainSynchronizationService
                 _miningController.Resume();
             }
 
-            return;
+            return false;
         }
 
         // Gap or Fork detected
@@ -536,12 +543,12 @@ public class ChainSynchronizationService
             if (resolvedWithSender)
             {
                 _miningController.Restart("Fork resolved with sender chain");
-                return;
+                return false;
             }
         }
 
         _miningController.Resume();
-        await InitialSyncAsync(cancellationToken);
+        return true;
     }
 
     private async Task<bool> TryResolveWithPeerAsync(string host, int port, List<Block> localChain, CancellationToken cancellationToken)
@@ -696,7 +703,7 @@ public class ChainSynchronizationService
 
             _miningController.Restart($"Mined block #{block.Header.Index}");
 
-            await BroadcastBlockAsync(block, cancellationToken);
+            await BroadcastBlockAsync(block, CancellationToken.None);
             return true;
         }
         finally
